@@ -1,14 +1,358 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DNA Processing Visualization</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <title>DNA Sequence Processor</title>
+    <style>
+        svg {
+            border: 1px solid black;
+        }
+        .component {
+            fill: lightgray;
+            stroke: black;
+        }
+        .subcomponent {
+            fill: white;
+            stroke: gray;
+        }
+        .label {
+            font-size: 14px;
+            text-anchor: middle;
+        }
+        .step-label {
+            font-size: 12px;
+            font-weight: bold;
+            fill: darkblue;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid black;
+            padding: 5px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-    <h1>DNA Sequence Processing</h1>
-    <p>Visualization of how a computer processes DNA sequences.</p>
+    <h1>DNA Sequence Input</h1>
+    <form id="dnaForm">
+        <label for="sequence">Enter DNA Sequence:</label>
+        <input type="text" id="sequence" name="sequence" required oninput="resizeInput(this)" placeholder="e.g., ACTG" style="width: 200px;">
+        <button type="submit">Submit</button>
+        <button type="button" onclick="resetVisualization()">Reset</button>
+    </form>
+
+    <div id="output"></div>
+
+    <p>CPU Time Used: <span id="cpu-used"></span> sec</p>
+    <p>Memory Used: <span id="mem-used"></span> MB</p>
+    <p>Processing Time: <span id="proc-time"></span> sec</p>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
+        let binaryTextElements = [];
+
+        document.getElementById("dnaForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+            const sequence = document.getElementById("sequence").value.toUpperCase();
+
+            if (!/^[ATCG]*$/.test(sequence)) {
+                alert("Invalid characters detected. Please enter only A, T, C, or G.");
+                return;
+            }
+
+            fetch("/process", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sequence: sequence })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('cpu-used').textContent = data.cpu_time_used;
+                document.getElementById('mem-used').textContent = data.memory_used_mb;
+                document.getElementById('proc-time').textContent = data.processing_time_sec;
+
+                visualizeProcessing(sequence, data.binary);
+            });
+        });
+
+        function resizeInput(input) {
+            const tempSpan = document.createElement("span");
+            tempSpan.style.visibility = "hidden";
+            tempSpan.style.position = "absolute";
+            tempSpan.style.whiteSpace = "pre";
+            tempSpan.style.font = window.getComputedStyle(input).font;
+            tempSpan.textContent = input.value || input.placeholder;
+            document.body.appendChild(tempSpan);
+            input.style.width = tempSpan.offsetWidth + 20 + "px";
+            document.body.removeChild(tempSpan);
+        }
+
+        function resetVisualization() {
+            d3.select("svg").remove();
+            document.getElementById("sequence").value = "";
+            document.getElementById("cpu-used").textContent = "";
+            document.getElementById("mem-used").textContent = "";
+            document.getElementById("proc-time").textContent = "";
+        }
+
+        function visualizeProcessing(sequence, binary) {
+            d3.select("svg").remove();
+
+            const svg = d3.select("body").append("svg")
+                .attr("width", 1400)
+                .attr("height", 350)
+                .style("overflow-x", "auto")
+                .style("display", "block");
+
+            svg.append("text")
+                .attr("x", 175)
+                .attr("y", 40)
+                .attr("class", "step-label")
+                .text("1. User Input");
+
+            svg.append("rect")
+                .attr("x", 100)
+                .attr("y", 50)
+                .attr("width", 150)
+                .attr("height", 50)
+                .attr("fill", "lightblue")
+                .attr("stroke", "black")
+                .on("mouseover", () => showTooltip("User enters DNA sequence"))
+                .on("mouseout", hideTooltip);
+
+            svg.append("text")
+                .attr("x", 175)
+                .attr("y", 80)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .text("Input");
+
+            const dnaArray = sequence.split("");
+            dnaArray.forEach((char, i) => {
+                svg.append("text")
+                    .attr("x", 120 + i * 20)
+                    .attr("y", 130)
+                    .attr("font-size", "18px")
+                    .attr("opacity", 0)
+                    .text(char)
+                    .transition()
+                    .delay(i * 300)
+                    .duration(500)
+                    .attr("opacity", 1);
+            });
+
+            setTimeout(() => {
+                animateBinaryEncoding(svg, dnaArray);
+            }, dnaArray.length * 300 + 500);
+        }
+
+        function animateBinaryEncoding(svg, dnaArray) {
+            const mapping = { A: "00", T: "01", C: "10", G: "11" };
+            binaryTextElements = [];
+
+            svg.append("text")
+                .attr("x", 400)
+                .attr("y", 40)
+                .attr("class", "step-label")
+                .text("2. Binary Encoding");
+
+            svg.append("text")
+                .attr("x", 400)
+                .attr("y", 80)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .text("Binary Encoding");
+
+            dnaArray.forEach((char, i) => {
+                const binary = mapping[char] || "??";
+                const elem = svg.append("text")
+                    .attr("x", 380 + i * 30)
+                    .attr("y", 130)
+                    .attr("font-size", "18px")
+                    .attr("opacity", 0)
+                    .text(binary)
+                    .transition()
+                    .delay(i * 300)
+                    .duration(500)
+                    .attr("opacity", 1)
+                    .selection();
+                binaryTextElements.push(elem);
+            });
+
+            const binaryArray = dnaArray.map(char => mapping[char] || "??");
+
+            setTimeout(() => {
+                animateRAM(svg, binaryArray);
+            }, dnaArray.length * 300 + 1000);
+        }
+
+        function animateRAM(svg, binaryArray) {
+            svg.append("text")
+                .attr("x", 775)
+                .attr("y", 40)
+                .attr("class", "step-label")
+                .text("3. RAM Storage");
+
+            svg.append("rect")
+                .attr("x", 700)
+                .attr("y", 50)
+                .attr("width", 150)
+                .attr("height", 50)
+                .attr("fill", "lightgreen")
+                .attr("stroke", "black")
+                .on("mouseover", () => showTooltip("Temporary memory for binary data"))
+                .on("mouseout", hideTooltip);
+
+            svg.append("text")
+                .attr("x", 775)
+                .attr("y", 80)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .text("RAM");
+
+            binaryTextElements.forEach((elem, i) => {
+                elem.transition()
+                    .delay(i * 300)
+                    .duration(1000)
+                    .attr("x", 720 + (i % 5) * 25)
+                    .attr("y", 130 + Math.floor(i / 5) * 30);
+            });
+
+            setTimeout(() => {
+                animateCPU(svg, binaryArray);
+            }, binaryArray.length * 300 + 1500);
+        }
+
+        function animateCPU(svg, binaryArray) {
+            svg.append("text")
+                .attr("x", 975)
+                .attr("y", 40)
+                .attr("class", "step-label")
+                .text("4. CPU Processing");
+
+            svg.append("rect")
+                .attr("x", 900)
+                .attr("y", 50)
+                .attr("width", 150)
+                .attr("height", 50)
+                .attr("fill", "lightcoral")
+                .attr("stroke", "black")
+                .on("mouseover", () => showTooltip("Main processor performs logic operations"))
+                .on("mouseout", hideTooltip);
+
+            svg.append("text")
+                .attr("x", 975)
+                .attr("y", 80)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .text("CPU");
+
+            d3.selectAll("text")
+                .filter((d, i, nodes) => {
+                    const text = d3.select(nodes[i]).text();
+                    return ["00", "01", "10", "11"].includes(text);
+                })
+                .transition()
+                .delay((d, i) => i * 300)
+                .duration(1000)
+                .attr("x", (d, i) => 920 + (i % 5) * 25)
+                .attr("y", (d, i) => 130 + Math.floor(i / 5) * 30);
+
+            setTimeout(() => {
+                animateCPUProcessing(svg, binaryArray);
+            }, binaryArray.length * 300 + 2000);
+        }
+
+        function animateCPUProcessing(svg, binaryArray) {
+            const cpuProcessingLabel = svg.append("text")
+                .attr("x", 975)
+                .attr("y", 150)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .text("Processing...");
+
+            const processed = binaryArray.map(b => b === "00" ? "0" : "1").join(" ");
+
+            svg.append("text")
+                .attr("x", 975)
+                .attr("y", 200)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .attr("opacity", 0)
+                .text("AND Result: " + processed)
+                .transition()
+                .delay(2000)
+                .duration(500)
+                .attr("opacity", 1);
+
+            setTimeout(() => {
+                cpuProcessingLabel.transition()
+                    .duration(500)
+                    .attr("opacity", 0)
+                    .remove();
+
+                svg.append("text")
+                    .attr("x", 975)
+                    .attr("y", 250)
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", "16px")
+                    .text("CPU Processing Done");
+            }, 3000);
+
+            setTimeout(() => {
+                animateOutput(svg);
+            }, 3500);
+        }
+
+        function animateOutput(svg) {
+            svg.append("text")
+                .attr("x", 1175)
+                .attr("y", 40)
+                .attr("class", "step-label")
+                .text("5. Final Output");
+
+            svg.append("rect")
+                .attr("x", 1100)
+                .attr("y", 50)
+                .attr("width", 150)
+                .attr("height", 50)
+                .attr("fill", "gold")
+                .attr("stroke", "black");
+
+            svg.append("text")
+                .attr("x", 1175)
+                .attr("y", 80)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .text("Output");
+
+            svg.append("text")
+                .attr("x", 1175)
+                .attr("y", 130)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "16px")
+                .attr("opacity", 0)
+                .text("Result: Processed")
+                .transition()
+                .delay(1000)
+                .duration(500)
+                .attr("opacity", 1);
+        }
+
+        function showTooltip(text) {
+            const tooltip = document.getElementById("tooltip");
+            tooltip.style.display = "block";
+            tooltip.innerText = text;
+        }
+
+        function hideTooltip() {
+            const tooltip = document.getElementById("tooltip");
+            tooltip.style.display = "none";
+        }
+    </script>
 </body>
 </html>
